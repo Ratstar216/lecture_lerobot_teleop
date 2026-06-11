@@ -1,0 +1,68 @@
+# Pixi manifest for the LeRobot teleoperation lecture.
+# Docs: https://pixi.sh  |  LeRobot: https://github.com/huggingface/lerobot
+[workspace]
+name = "lecture_lerobot_teleop"
+version = "0.1.0"
+description = "LeRobot teleoperation lecture environment, managed reproducibly with pixi"
+channels = ["conda-forge"]
+# Add your platform here if it is missing (e.g. "osx-64", "win-64"), then run `pixi install`.
+platforms = ["osx-arm64", "linux-64"]
+
+# LeRobot pulls in rerun-sdk, which only ships manylinux_2_31 wheels. Raise the
+# Linux glibc baseline to 2.31 (Ubuntu 20.04+/Debian 11+) so those wheels are
+# accepted; otherwise the linux-64 solve silently falls back to a broken
+# placeholder release of lerobot.
+[system-requirements]
+libc = "2.31"
+
+# --- conda-forge packages -------------------------------------------------
+# Python and the native ffmpeg build (used by LeRobot for video encode/decode)
+# come from conda-forge so the binary codecs are present and reproducible.
+[dependencies]
+# lerobot 0.5.x requires Python >=3.12.
+python = "3.12.*"
+# Pin to ffmpeg 7.x: LeRobot decodes video via torchcodec, which only supports
+# ffmpeg 4-7. conda-forge's ffmpeg 8 (libavutil.60) fails to load in torchcodec.
+ffmpeg = ">=7.0,<8"
+# lerobot 0.5.x caps a couple of build/util packages that conda-forge would
+# otherwise install at a newer version than lerobot allows. Constrain them here
+# so the conda solve picks versions the PyPI solve (lerobot) can accept.
+packaging = "<26"      # lerobot needs packaging<26 (conda default is 26.x)
+setuptools = ">=71,<81"  # lerobot needs setuptools>=71,<81 (conda default is 82.x)
+pip = "*"
+
+# --- PyPI packages --------------------------------------------------------
+# LeRobot ships on PyPI. The `feetech` extra pulls in feetech-servo-sdk, needed
+# to drive Feetech servos (SO-100 / SO-101 teleop arms).
+[pypi-dependencies]
+# Pinned to 0.5.1 (latest at setup time). Needs Python >=3.12 and packaging<26,
+# both handled above. The exact pin also keeps uv from probing the old
+# placeholder release (lerobot 0.1.0) on PyPI. Bump as new versions land.
+lerobot = { version = "==0.5.1", extras = ["feetech"] }
+
+# --- Tasks (run with `pixi run <name>`) -----------------------------------
+[tasks]
+verify = { cmd = "python -c \"import lerobot, scservo_sdk; print('lerobot', lerobot.__version__, '| feetech OK')\"" }
+ffmpeg-version = "ffmpeg -version"
+find-cameras = "lerobot-find-cameras"  # list connected cameras and save a sample image
+
+# --- SO-101 arm workflow (register once by role, then no ports/ids needed) ---
+set-port = "python scripts/so101.py find-port"       # usage: pixi run set-port leader | follower
+arms = "python scripts/so101.py show"                # show registered arms
+check = "python scripts/so101.py check"              # usage: pixi run check leader | follower
+set-camera = "python scripts/so101.py set-camera"    # usage: pixi run set-camera front --index 0
+setup-motors = "python scripts/so101.py setup-motors"  # usage: pixi run setup-motors leader | follower
+calibrate = "python scripts/so101.py calibrate"      # usage: pixi run calibrate leader | follower
+teleop = "python scripts/so101.py teleop"            # uses both saved arms; no args needed
+
+# --- Imitation-learning pipeline (record -> train -> eval) -------------------
+hf-login = "hf auth login"                           # log in before pushing datasets/policies
+record = "python scripts/so101.py record"            # usage: pixi run record --task "..." --repo-id name
+replay = "python scripts/so101.py replay"            # usage: pixi run replay --repo-id name --episode 0
+viz = "python scripts/so101.py viz"                  # usage: pixi run viz --repo-id name --episode 0
+upload = "python scripts/so101.py upload"            # usage: pixi run upload --repo-id name  (existing local dataset)
+train = "python scripts/so101.py train"              # usage: pixi run train --repo-id name [--policy act]
+eval = "python scripts/so101.py eval"                # usage: pixi run eval --policy <ckpt> --task "..." --repo-id eval_name
+
+# Low-level fallback if you prefer raw lerobot port detection:
+find-port = "lerobot-find-port"

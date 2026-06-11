@@ -1,0 +1,16 @@
+# pixi: local environments (recreated from pixi.lock); commit pixi.lock, not these.
+.pixi/
+
+# SO-101 arm registry (machine-local serial ports)
+.so101_arms.json
+
+# lerobot outputs (captured images, recordings, etc.)
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# OS
+.DS_Store

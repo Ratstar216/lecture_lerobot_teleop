@@ -369,18 +369,54 @@ LeRobot の依存関係は厳しめで、pixi は conda と PyPI を一緒に解
 新しい lerobot に上げる場合は、`lerobot` を更新し、そのメタデータに対して
 `python`/`packaging`/`setuptools`/`ffmpeg` の制約を見直してから `pixi install` を実行してください。
 
-## 自分のプラットフォームを追加する
+## Linux / Windows / Intel Mac で動かす
 
-`pixi.toml` は現在 `osx-arm64` と `linux-64` 向けにロックされています。別のプラットフォーム
-（例: Intel Mac や Windows）を追加するには、`pixi.toml` の `platforms` を編集するか、次を実行します。
+ロックファイルは現在 `osx-arm64` と `linux-64` をカバーしています。別プラットフォームに対応するには
+追加して再ロックし、更新された `pixi.lock` をコミットします。
 
 ```bash
-pixi project platform add osx-64    # または: win-64
+pixi project platform add win-64    # または: osx-64
 pixi install
 ```
 
-> 注: lerobot の Windows / Linux-aarch64 対応は一部 extra で限定的です。新しいプラットフォームで
-> 解決が失敗した場合、エラーに原因のパッケージ名が出ます。
+> ステータス: `linux-64` はここで解決を確認済み。以下は**ベストエフォートで、実際の Windows/Linux/
+> Intel 実機では未検証**です。試すときに確認してください。解決が失敗するとエラーに原因パッケージ名が
+> 出るので、それを共有してもらえればピンを調整します。
+
+### Linux (x86_64) — 既にロック済み
+
+- **glibc ≥ 2.31**（Ubuntu 20.04+ / Debian 11+）。`[system-requirements]` で設定済み。古いディストロでは
+  別の `rerun-sdk` か、より低いピンが必要です。
+- **シリアル権限:** `sudo usermod -aG dialout $USER`（再ログイン）。ポートは `/dev/ttyACM*` か `/dev/ttyUSB*`。
+- **カメラ:** `sudo usermod -aG video $USER`。
+- **record/eval のキー操作（→/Esc）** は pynput を使い、**X11 セッションが必要**です。Wayland のキー監視は
+  不安定なので、「Xorg/X11」セッションでログインするか、`--episode-time` / `--reset-time` で制御します。
+  ヘッドレス/SSH ではキーボードも Rerun ウィンドウも無い（`--no-display` を使う）。
+- **動画/GPU:** torchcodec は linux-64 で動作。PyPI の `torch` は Linux では通常 CUDA ビルドなので、NVIDIA
+  ドライバがあれば `pixi run train --device cuda` が使えます（`pixi run python -c "import torch; print(torch.cuda.is_available())"` で確認）。
+
+### Windows (x86_64) — `win-64` を追加
+
+- **シリアルポートは `COM3`, `COM4`, …** — `pixi run set-port` はそれも検出します（pyserial が `COM*` を
+  同様に列挙）。`lerobot-*` は `--robot.port=COM5` を受け付けます。
+- **torchcodec の Windows wheel が無い**ため、lerobot は動画デコードを**自動で `pyav` にフォールバック**します
+  （動くが遅め）。録画は conda-forge の ffmpeg でエンコードします。*（ソースで確認: torchcodec が無いと pyav を使用）*
+- **キー操作は動作**します（pynput は Windows 対応）。
+- **GPU:** PyPI の `torch` は Windows では**既定が CPU 版**。CUDA は CUDA wheel（pixi の追加 index-url）が必要
+  — もしくは Linux/Colab で学習。CPU 学習は可能ですが遅いです。
+- `win-64` の解決自体は**未検証**です。`pixi install` を実行し、競合が出たら共有してください。
+
+### Intel Mac (osx-64) — `osx-64` を追加
+
+- 動画は Windows と同じく torchcodec が Intel macOS でも除外され、自動で `pyav` を使います。それ以外は
+  Apple Silicon と同じ流れです。
+
+### 共通
+
+- `.so101_arms.json` は端末ローカル（シリアルポートを保存）なので、各受講者が自分の PC で `set-port` を
+  実行します（git では共有されません）。
+- プラットフォーム追加後は、**再生成された `pixi.lock` をコミット**して全員が同じマルチプラットフォーム環境を
+  得られるようにします。
 
 ## 依存関係の更新
 

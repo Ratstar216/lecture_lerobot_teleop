@@ -398,19 +398,62 @@ a few pins keep the two solvers compatible:
 To move to a newer lerobot, bump `lerobot`, re-check the `python`/`packaging`/
 `setuptools`/`ffmpeg` constraints against its metadata, and run `pixi install`.
 
-## Adding your platform
+## Running on Linux / Windows / Intel Mac
 
-`pixi.toml` is currently locked for `osx-arm64` and `linux-64`. To add another
-platform (for example Intel Macs or Windows), either edit the `platforms` list
-in `pixi.toml` or run:
+The lockfile currently covers `osx-arm64` and `linux-64`. To support another
+platform, add it and re-lock, then commit the updated `pixi.lock`:
 
 ```bash
-pixi project platform add osx-64    # or: win-64
+pixi project platform add win-64    # or: osx-64
 pixi install
 ```
 
-> Note: lerobot's Windows/Linux-aarch64 support for some extras is limited; if a
-> solve fails on a new platform, the error will name the offending package.
+> Status: `linux-64` is verified to resolve here; the notes below are
+> **best-effort and not yet tested on real Windows/Linux/Intel hardware** —
+> verify when you try them. If a solve fails, the error names the offending
+> package; send it over and we'll adjust the pins.
+
+### Linux (x86_64) — already in the lockfile
+
+- **glibc ≥ 2.31** (Ubuntu 20.04+/Debian 11+), set via `[system-requirements]`.
+  Older distros need a different `rerun-sdk` or a lower-pinned set.
+- **Serial access:** add yourself to `dialout` — `sudo usermod -aG dialout $USER`
+  (log out/in). Ports are `/dev/ttyACM*` or `/dev/ttyUSB*`.
+- **Cameras:** add yourself to `video` (`sudo usermod -aG video $USER`).
+- **Record/eval keyboard (→/Esc)** uses pynput, which needs an **X11 session**;
+  Wayland keyboard monitoring is unreliable — log into an "Xorg"/"X11" session,
+  or just rely on `--episode-time` / `--reset-time`. Headless/SSH has no keyboard
+  and no Rerun window (use `--no-display`).
+- **Video/GPU:** torchcodec works on linux-64. PyPI `torch` on Linux is typically
+  the CUDA build, so `pixi run train --device cuda` should work with an NVIDIA
+  driver — verify with `pixi run python -c "import torch; print(torch.cuda.is_available())"`.
+
+### Windows (x86_64) — add `win-64`
+
+- **Serial ports are `COM3`, `COM4`, …** — `pixi run set-port` still detects them
+  (pyserial lists `COM*` the same way), and `lerobot-*` accept `--robot.port=COM5`.
+- **torchcodec has no Windows wheel**, so lerobot **auto-falls back to `pyav`** for
+  video decoding (works; likely slower). Recording still encodes video via the
+  conda-forge ffmpeg. *(Verified in source: lerobot uses pyav when torchcodec is
+  absent.)*
+- **Keyboard controls work** (pynput supports Windows).
+- **GPU:** PyPI `torch` on Windows is **CPU-only by default**; CUDA needs the
+  CUDA wheel (an extra pixi index-url) — or just train on Linux/Colab. CPU
+  training works but is slow.
+- The `win-64` solve itself is **untested here**; run `pixi install` and report
+  any conflict.
+
+### Intel Mac (osx-64) — add `osx-64`
+
+- Same as Windows for video: torchcodec is excluded on Intel macOS too, so `pyav`
+  is used automatically. Everything else matches the Apple-Silicon flow.
+
+### General
+
+- `.so101_arms.json` is per-machine (it stores local serial ports), so each
+  student runs `set-port` on their own laptop — it isn't shared via git.
+- After adding platforms, **commit the regenerated `pixi.lock`** so everyone gets
+  the same multi-platform environment.
 
 ## Updating dependencies
 

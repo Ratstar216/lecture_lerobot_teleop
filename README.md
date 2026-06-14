@@ -11,6 +11,50 @@ which adds the Feetech servo SDK used to drive SO-100 / SO-101 teleop arms.
 
 🇯🇵 日本語版は [README_ja.md](./README_ja.md) を参照してください。
 
+## Overview — what runs in what order
+
+```mermaid
+flowchart TD
+    A["Install pixi + pixi install (Step 1-2)"] --> B["set-port leader and follower (5.1)"]
+    B --> C{"check: all 6 motors respond? (5.2)"}
+    C -->|"no / fresh arm"| D["setup-motors — assign IDs (5.2 Branch B)"]
+    D --> C
+    C -->|"yes"| E["calibrate leader and follower (5.3)"]
+    E --> F["set-camera — optional (4, 5.4)"]
+    F --> G["teleop — verify control + cameras (5)"]
+    G --> H["record a dataset (6.1)"]
+    H --> I["viz / replay — inspect (6.4)"]
+    I --> J{"episodes good?"}
+    J -->|"no"| K["drop bad + record --resume (6.4)"]
+    K --> I
+    J -->|"yes"| L["train — Linux/GPU ok (6.2)"]
+    L --> M["policy-test — offline, no robot (6.5)"]
+    M --> N["eval on the robot (6.3)"]
+
+    classDef nohw fill:#eef,stroke:#88a;
+    class A,H,I,K,L,M nohw;
+```
+
+First time? Do **Steps 1–3 once**, then the hardware bring-up (Step 5) per arm,
+then loop the data→train→eval cycle (Step 6). Blue boxes need **no robot** (can
+run on a remote/Linux GPU box).
+
+### What to connect, and when
+
+| Command | Plug in | Notes |
+| --- | --- | --- |
+| `set-port leader` / `follower` | that **one** arm's USB | you'll be asked to *unplug* it to detect the port — connect one at a time |
+| `setup-motors <role>` | the arm's controller + **motor power**, then motors **one at a time** | follow the prompts |
+| `check` / `calibrate <role>` | that arm's USB **+ motor power** | |
+| `teleop`, `record` | **both** arms' USB + **both powered** + cameras' USB | leader=teleop, follower=robot |
+| `eval`, `replay` | **follower** USB + power (+ cameras for eval) | no leader — the policy/recording drives the follower |
+| `find-cameras`, `set-camera` | the cameras' USB | get the index, then register it |
+| `train`, `policy-test`, `viz`, `upload` | **nothing** (no robot) | data/compute only — fine over SSH |
+
+> Power = the servo bus power (DC barrel jack), separate from USB. Motors won't
+> respond on USB alone. For autonomous `eval`, keep the power switch / E-stop
+> within reach (see [Safety](#safety-gentle-motion--stopping)).
+
 ## What's included
 
 | Package | Version | Source | Why |
@@ -145,21 +189,46 @@ unplug it, so it always picks the right one. It also stores a calibration `id`
 (default `my_awesome_leader_arm` / `my_awesome_follower_arm`); pass `--id NAME`
 to choose your own.
 
-### 5.2 Assign motor IDs
+### 5.2 Assign motor IDs — only if needed
 
-Feetech servos ship with the same default ID, so each motor must be given its ID
-(1–6) and baud rate **once**. This walks you through connecting the motors one at
-a time:
+Whether you need this depends on the arm's state. **Run `check` first to find out:**
+
+```bash
+pixi run check follower    # and: pixi run check leader
+```
+
+Then pick the branch that matches the output:
+
+#### Branch A — IDs already assigned (e.g. a pre-configured arm, or you did this before)
+
+All six motors print a row with the right id (no `NO RESPONSE`). **Skip
+setup-motors entirely** and go straight to 5.3 (calibrate).
+
+#### Branch B — fresh arm / near-initial state (IDs not set yet)
+
+Feetech servos all ship with the **same default id (1)**, so on a blank arm
+`check` shows mostly `NO RESPONSE` (only id 1 answers, often garbled). Assign each
+motor its id (1–6) and baud rate **once** — it walks you through plugging the
+motors in **one at a time**:
 
 ```bash
 pixi run setup-motors follower
 pixi run setup-motors leader
 ```
 
+Then re-run `pixi run check <role>` — all six should now respond.
+
+> **A few motors missing (e.g. ids 2 and 4) but others fine?** That's *not* the
+> blank-arm case — the ids exist but those motors aren't answering. It's almost
+> always the **daisy-chain cable or power** to those joints (reseat the connectors
+> on each side of the missing motor, confirm the arm is powered), or those motors
+> were never assigned (re-run `setup-motors <role>`). See the "Teleop error … no
+> status packet" note below.
+
 ### 5.3 Check, calibrate, teleoperate
 
 ```bash
-pixi run check follower    # optional: verify every motor responds and is in range
+pixi run check follower    # confirm every motor responds and is in range
 pixi run calibrate follower
 pixi run calibrate leader
 pixi run teleop            # drives follower from leader — no ports/ids needed
@@ -187,8 +256,15 @@ the viewer shows the camera images. Toggles:
 ```bash
 pixi run teleop --no-cameras   # arms only, no camera capture
 pixi run teleop --no-display   # run cameras but don't open the viewer window
+pixi run teleop --keep-viewer  # leave the Rerun viewer open after the run ends
 pixi run set-camera front --remove   # drop a camera
 ```
+
+> lerobot spawns the Rerun viewer with `rr.spawn()` and never closes it, so it
+> would otherwise linger after the run. `teleop` / `record` / `eval` therefore
+> **close the viewer they spawned on exit** (only that one — any viewer you had
+> open already is left alone). Pass `--keep-viewer` to keep it open for scrubbing.
+> `viz` intentionally leaves its viewer open (that's the point of inspecting).
 
 Any extra flags are forwarded to lerobot (e.g. `pixi run teleop --fps=30`).
 Official guide: <https://huggingface.co/docs/lerobot>.

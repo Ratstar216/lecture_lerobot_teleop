@@ -386,9 +386,58 @@ def calibrate(ctx: typer.Context, role: Role) -> None:
     raise typer.Exit(subprocess.run(cmd).returncode)
 
 
-def _run(cmd: list[str]) -> None:
+def _rerun_pids() -> set[int]:
+    """PIDs of running Rerun viewer processes."""
+    try:
+        import psutil
+    except Exception:
+        return set()
+    pids = set()
+    for p in psutil.process_iter(["name"]):
+        try:
+            if "rerun" in (p.info["name"] or "").lower():
+                pids.add(p.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return pids
+
+
+def _kill_new_rerun(before: set[int]) -> None:
+    """Close Rerun viewers that appeared since `before` (lerobot's `rr.spawn` leaves them running)."""
+    try:
+        import psutil
+    except Exception:
+        return
+    victims = []
+    for p in psutil.process_iter(["name"]):
+        try:
+            if p.pid not in before and "rerun" in (p.info["name"] or "").lower():
+                victims.append(p)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    if not victims:
+        return
+    for p in victims:
+        try:
+            p.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    _, alive = psutil.wait_procs(victims, timeout=3)
+    for p in alive:
+        try:
+            p.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    typer.secho(f"(closed {len(victims)} leftover Rerun viewer process(es))", fg="yellow")
+
+
+def _run(cmd: list[str], cleanup_rerun: bool = False) -> None:
     typer.secho("$ " + " ".join(cmd), fg="blue")
-    raise typer.Exit(subprocess.run(cmd).returncode)
+    before = _rerun_pids() if cleanup_rerun else set()
+    rc = subprocess.run(cmd).returncode
+    if cleanup_rerun:
+        _kill_new_rerun(before)
+    raise typer.Exit(rc)
 
 
 def _arm_flags(prefix: str, info: dict) -> list[str]:
@@ -400,6 +449,7 @@ def teleop(
     ctx: typer.Context,
     max_rel: float = typer.Option(None, "--max-rel", help="Safety cap: max degrees a follower joint may move per control step (e.g. 5). Makes the initial sync ramp up gently instead of snapping."),
     display: bool = typer.Option(True, "--display/--no-display", help="Show camera & joint data in the Rerun viewer."),
+    keep_viewer: bool = typer.Option(False, "--keep-viewer", help="Leave the Rerun viewer open after exit (default: close the viewer this run spawned)."),
     cameras: bool = typer.Option(True, "--cameras/--no-cameras", help="Attach the follower's registered cameras."),
 ) -> None:
     """Run lerobot-teleoperate using both saved arms (+ registered cameras). Extra flags are forwarded."""
@@ -410,7 +460,7 @@ def teleop(
     extra = list(ctx.args)
     _add_cameras_display(cmd, foll, extra, cameras, display)
     _add_max_rel(cmd, extra, max_rel)
-    _run(cmd + extra)
+    _run(cmd + extra, cleanup_rerun=display and not keep_viewer)
 
 
 @app.command(context_settings=PASSTHROUGH)
@@ -427,6 +477,7 @@ def record(
     resume: bool = typer.Option(False, "--resume", help="Append to an existing dataset; --episodes then means N *additional* episodes (e.g. after `drop`)."),
     max_rel: float = typer.Option(None, "--max-rel", help="Safety cap: max degrees a follower joint may move per control step (e.g. 5)."),
     display: bool = typer.Option(True, "--display/--no-display"),
+    keep_viewer: bool = typer.Option(False, "--keep-viewer", help="Leave the Rerun viewer open after exit (default: close it)."),
     cameras: bool = typer.Option(True, "--cameras/--no-cameras"),
 ) -> None:
     """Record a teleoperated dataset (lerobot-record) using both saved arms + cameras. Extra flags forwarded.
@@ -460,7 +511,7 @@ def record(
     extra = list(ctx.args)
     _add_cameras_display(cmd, foll, extra, cameras, display)
     _add_max_rel(cmd, extra, max_rel)
-    _run(cmd + extra)
+    _run(cmd + extra, cleanup_rerun=display and not keep_viewer)
 
 
 @app.command(context_settings=PASSTHROUGH)
@@ -525,6 +576,7 @@ def evaluate(
     overwrite: bool = typer.Option(False, "--overwrite", help="Delete an existing local eval dataset with this id first."),
     max_rel: float = typer.Option(None, "--max-rel", help="Safety cap: max degrees the follower may move per step (e.g. 5). Recommended for autonomous eval to limit sudden motion."),
     display: bool = typer.Option(True, "--display/--no-display"),
+    keep_viewer: bool = typer.Option(False, "--keep-viewer", help="Leave the Rerun viewer open after exit (default: close it)."),
     cameras: bool = typer.Option(True, "--cameras/--no-cameras"),
 ) -> None:
     """Run a trained policy on the follower and record eval episodes (lerobot-record + --policy.path)."""
@@ -551,7 +603,7 @@ def evaluate(
     extra = list(ctx.args)
     _add_cameras_display(cmd, foll, extra, cameras, display)
     _add_max_rel(cmd, extra, max_rel)
-    _run(cmd + extra)
+    _run(cmd + extra, cleanup_rerun=display and not keep_viewer)
 
 
 @app.command(context_settings=PASSTHROUGH)

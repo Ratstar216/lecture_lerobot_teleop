@@ -571,6 +571,14 @@ def _run(cmd: list[str], cleanup_rerun: bool = False) -> None:
     rc = subprocess.run(cmd).returncode
     if cleanup_rerun:
         _kill_new_rerun(before)
+    if rc in (-9, 137):
+        typer.secho(
+            "\nCommand was killed by SIGKILL (exit 137). On this machine that usually means the OS "
+            "OOM-killed Python while loading a large policy such as PI0, before robot motion starts. "
+            "Close memory-heavy apps, increase swap/RAM, or use a smaller policy/checkpoint, then retry.",
+            fg="red",
+            err=True,
+        )
     raise typer.Exit(rc)
 
 

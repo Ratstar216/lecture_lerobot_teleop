@@ -42,12 +42,13 @@ pip = "*"
 
 # --- PyPI packages --------------------------------------------------------
 # LeRobot ships on PyPI. The `feetech` extra pulls in feetech-servo-sdk, needed
-# to drive Feetech servos (SO-100 / SO-101 teleop arms).
+# to drive Feetech servos (SO-100 / SO-101 teleop arms). The `pi` extra pulls
+# in the Transformers dependencies required by pi0 / PaliGemma policies.
 [pypi-dependencies]
 # Pinned to 0.5.1 (latest at setup time). Needs Python >=3.12 and packaging<26,
 # both handled above. The exact pin also keeps uv from probing the old
 # placeholder release (lerobot 0.1.0) on PyPI. Bump as new versions land.
-lerobot = { version = "==0.5.1", extras = ["feetech"] }
+lerobot = { version = "==0.5.1", extras = ["feetech", "pi"] }
 
 # --- Tasks (run with `pixi run <name>`) -----------------------------------
 [tasks]

@@ -214,6 +214,54 @@ def _safe_video_backend() -> str | None:
         return "pyav"
 
 
+def _patch_lerobot_empty_episode_save() -> None:
+    """Patch LeRobot 0.5.1 so stopping before the first frame does not save an empty episode."""
+    try:
+        import lerobot.scripts.lerobot_record as lerobot_record
+
+        path = Path(lerobot_record.__file__)
+        text = path.read_text()
+        old_guard = '''
+                episode_buffer = dataset.episode_buffer
+                if episode_buffer is None or episode_buffer["size"] == 0:
+                    logging.warning("Skipping empty episode buffer; no frames were recorded.")
+                    if events["stop_recording"]:
+                        break
+                    continue
+
+                dataset.save_episode()
+                recorded_episodes += 1
+'''
+        guard = "if not dataset.has_pending_frames():"
+        if guard in text:
+            return
+        needle = '''
+                dataset.save_episode()
+                recorded_episodes += 1
+'''
+        replacement = '''
+                if not dataset.has_pending_frames():
+                    logging.warning("Skipping empty episode buffer; no frames were recorded.")
+                    if events["stop_recording"]:
+                        break
+                    continue
+
+                dataset.save_episode()
+                recorded_episodes += 1
+'''
+        if old_guard in text:
+            text = text.replace(old_guard, replacement, 1)
+        elif needle in text:
+            text = text.replace(needle, replacement, 1)
+        else:
+            typer.secho("(could not patch lerobot-record empty-episode guard; installed code layout changed)", fg="yellow")
+            return
+        path.write_text(text)
+        typer.secho("(patched lerobot-record empty-episode guard)", fg="yellow")
+    except Exception as exc:
+        typer.secho(f"(could not patch lerobot-record empty-episode guard: {exc})", fg="yellow")
+
+
 def _auto_device() -> str:
     """Pick the best available torch device: cuda > mps > cpu."""
     try:
@@ -542,6 +590,7 @@ def record(
     foll = _require(cfg, "follower")
     repo = _resolve_repo(repo_id, for_creation=not resume)
     _maybe_overwrite(repo, overwrite)
+    _patch_lerobot_empty_episode_save()
     cmd = [
         "lerobot-record",
         *_arm_flags("robot", foll),
@@ -640,6 +689,7 @@ def evaluate(
             f"Use e.g. --repo-id eval_test."
         )
     _maybe_overwrite(repo, overwrite)
+    _patch_lerobot_empty_episode_save()
     cmd = [
         "lerobot-record",
         *_arm_flags("robot", foll),

@@ -55,6 +55,7 @@ lerobot = { version = "==0.5.1", extras = ["feetech", "pi"] }
 verify = { cmd = "python -c \"import lerobot, scservo_sdk; print('lerobot', lerobot.__version__, '| feetech OK')\"" }
 ffmpeg-version = "ffmpeg -version"
 find-cameras = "lerobot-find-cameras"  # list connected cameras and save a sample image
+camera-map = "python scripts/camera_mapping.py"  # compare training camera views with current camera snapshots
 
 # --- SO-101 arm workflow (register once by role, then no ports/ids needed) ---
 set-port = "python scripts/so101.py find-port"       # usage: pixi run set-port leader | follower

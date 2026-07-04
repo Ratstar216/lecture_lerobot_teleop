@@ -181,6 +181,42 @@ def _resolve_policy(policy: str) -> str:
     return policy
 
 
+
+def _policy_camera_names(policy: str) -> set[str]:
+    """Return visual observation camera names required by a local policy, if known."""
+    cfg_path = Path(policy) / "config.json"
+    if not cfg_path.exists():
+        return set()
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except Exception:
+        return set()
+    names = set()
+    for key, feature in cfg.get("input_features", {}).items():
+        if feature.get("type") == "VISUAL" and key.startswith("observation.images."):
+            names.add(key.removeprefix("observation.images."))
+    return names
+
+
+def _check_policy_cameras(policy: str, foll: dict, cameras: bool) -> None:
+    """Fail early when eval would run a visual policy without matching registered cameras."""
+    required = _policy_camera_names(policy)
+    if not required:
+        return
+    registered = set(foll.get("cameras", {}))
+    if not cameras:
+        raise typer.BadParameter(
+            f"This policy expects camera observations {sorted(required)}, but eval was run with --no-cameras."
+        )
+    missing = required - registered
+    if missing:
+        raise typer.BadParameter(
+            f"This policy expects camera observations {sorted(required)}, but the follower only has "
+            f"{sorted(registered) or 'no cameras'} registered. Run pixi run find-cameras, then register "
+            f"the matching names with pixi run set-camera NAME --index N."
+        )
+
+
 def _dataset_root(repo_id: str) -> Path:
     """Local directory where lerobot stores a dataset: $HF_LEROBOT_HOME/<repo_id>."""
     from lerobot.utils.constants import HF_LEROBOT_HOME
@@ -688,12 +724,14 @@ def evaluate(
             f"lerobot requires eval dataset names to start with 'eval_' (you gave '{name}'). "
             f"Use e.g. --repo-id eval_test."
         )
+    pol_path = _resolve_policy(policy)
+    _check_policy_cameras(pol_path, foll, cameras)
     _maybe_overwrite(repo, overwrite)
     _patch_lerobot_empty_episode_save()
     cmd = [
         "lerobot-record",
         *_arm_flags("robot", foll),
-        f"--policy.path={_resolve_policy(policy)}",
+        f"--policy.path={pol_path}",
         f"--dataset.repo_id={repo}",
         f"--dataset.num_episodes={episodes}",
         f"--dataset.single_task={task}",

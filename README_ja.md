@@ -57,9 +57,9 @@ flowchart TD
 
 | パッケージ | バージョン | 取得元 | 用途 |
 | --- | --- | --- | --- |
-| `python` | `3.12.*` | conda-forge | lerobot 0.5.x が要求 |
+| `python` | `3.10.*` | conda-forge | lerobot 0.3.3 の upstream 手順に合わせるため |
 | `ffmpeg` | `>=7.0,<8` | conda-forge | 動画エンコード・デコード。lerobot のデコーダ(`torchcodec`)は ffmpeg ≤ 7 対応 |
-| `lerobot[feetech]` | `==0.5.1` | PyPI | LeRobot 本体 + Feetech モータ用 `feetech-servo-sdk` |
+| `lerobot[feetech,pi0]` | `==0.3.3` | PyPI | LeRobot 本体 + Feetech モータ + PI0 方策の依存関係 |
 
 各ピン留めの理由は下の[なぜこのバージョン？](#なぜこのバージョン)を参照してください。
 
@@ -528,18 +528,17 @@ pixi run record --max-rel 5 ...
 LeRobot の依存関係は厳しめで、pixi は conda と PyPI を一緒に解決するため、両ソルバーの整合を
 保つためにいくつかのピン留めをしています。
 
-- **`python = 3.12.*`** — lerobot 0.5.x が Python ≥ 3.12 を要求。
+- **`python = 3.10.*`** — lerobot 0.3.3 は Python ≥ 3.10 対応で、upstream の手順に合わせています。
 - **`ffmpeg < 8`** — lerobot は `torchcodec` で動画をデコードし、これは ffmpeg 4〜7 にしか
   リンクできません。conda-forge の ffmpeg 8（`libavutil.60`）はロードに失敗するため 7.x に固定
   （`torchcodec` のデコーダ import を実機確認済み）。
-- **`packaging < 26` と `setuptools >= 71, < 81`**（`[dependencies]` 内）— lerobot 0.5.1 が
-  これらに上限を課す一方、conda-forge は新しい版を入れようとします。conda 側でピン留めすることで
-  PyPI 側の解決が通ります。
+- **`packaging >= 24.2`**（`[dependencies]` 内）— lerobot 0.3.3 が要求する下限です。
+  ローカルの補助 CLI が直接使うため、`typer` も明示的に入れています。
 - **glibc ≥ 2.31**（`[system-requirements]`）— Linux での `rerun-sdk` wheel に必要。これが無いと
   linux-64 の解決が壊れた placeholder 版 lerobot に静かにフォールバックするため、明示しています。
 
 新しい lerobot に上げる場合は、`lerobot` を更新し、そのメタデータに対して
-`python`/`packaging`/`setuptools`/`ffmpeg` の制約を見直してから `pixi install` を実行してください。
+`python`/`packaging`/`ffmpeg` の制約と extras を見直してから `pixi install` を実行してください。
 
 ## Linux / Windows / Intel Mac で動かす
 

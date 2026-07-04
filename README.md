@@ -59,9 +59,9 @@ run on a remote/Linux GPU box).
 
 | Package | Version | Source | Why |
 | --- | --- | --- | --- |
-| `python` | `3.12.*` | conda-forge | Required by lerobot 0.5.x |
+| `python` | `3.10.*` | conda-forge | Matches the upstream guidance for lerobot 0.3.3 |
 | `ffmpeg` | `>=7.0,<8` | conda-forge | Video encode/decode; lerobot's decoder (`torchcodec`) supports ffmpeg ≤ 7 |
-| `lerobot[feetech]` | `==0.5.1` | PyPI | LeRobot + `feetech-servo-sdk` for Feetech motors |
+| `lerobot[feetech,pi0]` | `==0.3.3` | PyPI | LeRobot + Feetech motors + PI0 policy dependencies |
 
 The pins are explained under [Why these versions?](#why-these-versions) below.
 
@@ -566,19 +566,19 @@ limit how far and how long anything can go wrong.
 LeRobot's dependency graph is strict, and pixi solves conda + PyPI together, so
 a few pins keep the two solvers compatible:
 
-- **`python = 3.12.*`** — lerobot 0.5.x requires Python ≥ 3.12.
+- **`python = 3.10.*`** — lerobot 0.3.3 supports Python ≥ 3.10; this follows its upstream installation guidance.
 - **`ffmpeg < 8`** — lerobot decodes video with `torchcodec`, which only loads
   against ffmpeg 4–7. conda-forge's ffmpeg 8 (`libavutil.60`) fails to load, so
   we pin to the 7.x line (verified: `torchcodec` imports its decoder fine).
-- **`packaging < 26` and `setuptools >= 71, < 81`** (in `[dependencies]`) —
-  lerobot 0.5.1 caps these, but conda-forge would otherwise install newer
-  versions; pinning them on the conda side lets the PyPI solve succeed.
+- **`packaging >= 24.2`** (in `[dependencies]`) — lerobot 0.3.3 requires
+  this minimum, and `typer` is listed explicitly because the local helper CLI
+  uses it directly.
 - **glibc ≥ 2.31** (`[system-requirements]`) — required for `rerun-sdk` wheels
   on Linux. Without it, the linux-64 solve silently falls back to a broken
   placeholder release of lerobot, so we set the baseline explicitly.
 
 To move to a newer lerobot, bump `lerobot`, re-check the `python`/`packaging`/
-`setuptools`/`ffmpeg` constraints against its metadata, and run `pixi install`.
+`ffmpeg` constraints and extras against its metadata, and run `pixi install`.
 
 ## Running on Linux / Windows / Intel Mac
 

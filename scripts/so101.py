@@ -250,13 +250,17 @@ def _safe_video_backend() -> str | None:
         return "pyav"
 
 
-def _patch_lerobot_empty_episode_save() -> None:
-    """Patch LeRobot 0.5.1 so stopping before the first frame does not save an empty episode."""
+def _patch_lerobot_record_runtime() -> None:
+    """Patch known LeRobot 0.5.x record-time races in the installed pixi env."""
     try:
-        import lerobot.scripts.lerobot_record as lerobot_record
+        try:
+            import lerobot.record as lerobot_record
+        except ModuleNotFoundError:
+            import lerobot.scripts.lerobot_record as lerobot_record
 
         path = Path(lerobot_record.__file__)
         text = path.read_text()
+        changed = False
         old_guard = '''
                 episode_buffer = dataset.episode_buffer
                 if episode_buffer is None or episode_buffer["size"] == 0:
@@ -269,13 +273,12 @@ def _patch_lerobot_empty_episode_save() -> None:
                 recorded_episodes += 1
 '''
         guard = "if not dataset.has_pending_frames():"
-        if guard in text:
-            return
-        needle = '''
+        if guard not in text:
+            needle = '''
                 dataset.save_episode()
                 recorded_episodes += 1
 '''
-        replacement = '''
+            replacement = '''
                 if not dataset.has_pending_frames():
                     logging.warning("Skipping empty episode buffer; no frames were recorded.")
                     if events["stop_recording"]:
@@ -285,17 +288,64 @@ def _patch_lerobot_empty_episode_save() -> None:
                 dataset.save_episode()
                 recorded_episodes += 1
 '''
-        if old_guard in text:
-            text = text.replace(old_guard, replacement, 1)
-        elif needle in text:
-            text = text.replace(needle, replacement, 1)
-        else:
-            typer.secho("(could not patch lerobot-record empty-episode guard; installed code layout changed)", fg="yellow")
-            return
-        path.write_text(text)
-        typer.secho("(patched lerobot-record empty-episode guard)", fg="yellow")
+            current_needle = '''
+            dataset.save_episode()
+            recorded_episodes += 1
+'''
+            current_replacement = '''
+            if not dataset.has_pending_frames():
+                logging.warning("Skipping empty episode buffer; no frames were recorded.")
+                if events["stop_recording"]:
+                    break
+                continue
+
+            dataset.save_episode()
+            recorded_episodes += 1
+'''
+            if old_guard in text:
+                text = text.replace(old_guard, replacement, 1)
+                changed = True
+            elif needle in text:
+                text = text.replace(needle, replacement, 1)
+                changed = True
+            elif current_needle in text:
+                text = text.replace(current_needle, current_replacement, 1)
+                changed = True
+            else:
+                typer.secho("(could not patch lerobot-record empty-episode guard; installed code layout changed)", fg="yellow")
+        if changed:
+            path.write_text(text)
+            typer.secho("(patched lerobot-record empty-episode guard)", fg="yellow")
+
+        from lerobot.datasets import lerobot_dataset
+
+        dataset_path = Path(lerobot_dataset.__file__)
+        dataset_text = dataset_path.read_text()
+        wait_patch = '''
+        if self.image_writer is not None:
+            self._wait_image_writer()
+
+        # Clean up image files for the current episode buffer
+'''
+        if wait_patch not in dataset_text:
+            cleanup_needle = '''
+        # Clean up image files for the current episode buffer
+        if self.image_writer is not None:
+'''
+            cleanup_replacement = '''
+        if self.image_writer is not None:
+            self._wait_image_writer()
+
+        # Clean up image files for the current episode buffer
+        if self.image_writer is not None:
+'''
+            if cleanup_needle not in dataset_text:
+                typer.secho("(could not patch lerobot clear_episode_buffer image-writer wait; installed code layout changed)", fg="yellow")
+            else:
+                dataset_path.write_text(dataset_text.replace(cleanup_needle, cleanup_replacement, 1))
+                typer.secho("(patched lerobot clear_episode_buffer image-writer wait)", fg="yellow")
     except Exception as exc:
-        typer.secho(f"(could not patch lerobot-record empty-episode guard: {exc})", fg="yellow")
+        typer.secho(f"(could not patch lerobot record runtime: {exc})", fg="yellow")
 
 
 def _auto_device() -> str:
@@ -634,7 +684,7 @@ def record(
     foll = _require(cfg, "follower")
     repo = _resolve_repo(repo_id, for_creation=not resume)
     _maybe_overwrite(repo, overwrite)
-    _patch_lerobot_empty_episode_save()
+    _patch_lerobot_record_runtime()
     cmd = [
         "lerobot-record",
         *_arm_flags("robot", foll),
@@ -735,7 +785,7 @@ def evaluate(
     pol_path = _resolve_policy(policy)
     _check_policy_cameras(pol_path, foll, cameras)
     _maybe_overwrite(repo, overwrite)
-    _patch_lerobot_empty_episode_save()
+    _patch_lerobot_record_runtime()
     cmd = [
         "lerobot-record",
         *_arm_flags("robot", foll),

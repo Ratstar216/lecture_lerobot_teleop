@@ -1,0 +1,31 @@
+pixi run eval \
+    --policy outputs/train/pi0-record-testv2/checkpoints/last/pretrained_model \
+    --task "Move blue block into green frame while avoiding contact with orange object" \
+    --repo-id eval_pi0_record_testv2 \
+    --episodes 1 \
+    --max-rel 5 \
+    --overwrite \
+    --dataset.episode_time_s=20 \
+    --dataset.reset_time_s=10 \
+    --no-display
+
+
+trouble shooting
+ERROR re_grpc_server] Error while receiving messages: gRPC error, message: "h2 protocol error: error reading a body from connection"
+~> kill rerun
+
+
+pixi run camera-map --data data
+
+
+
+pixi run eval \
+    --policy data/model/pi0-record-testv2/checkpoints/last/pretrained_model \
+    --task "Move blue block into green frame while avoiding contact with orange object" \
+    --repo-id eval_pi0_record_testv2 \
+    --episodes 1 \
+    --max-rel 5 \
+    --overwrite \
+    --dataset.episode_time_s=20 \
+    --dataset.reset_time_s=10 \
+    --no-display

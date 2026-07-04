@@ -121,6 +121,16 @@ def _hf_user() -> str | None:
         return None
 
 
+def _hf_lerobot_home() -> Path:
+    """Return LeRobot's dataset cache directory across LeRobot versions."""
+    try:
+        from lerobot.constants import HF_LEROBOT_HOME
+    except ImportError:
+        from lerobot.utils.constants import HF_LEROBOT_HOME
+
+    return Path(HF_LEROBOT_HOME)
+
+
 def _resolve_repo(repo_id: str, for_creation: bool = False) -> str:
     """Turn a bare `name` into `user/name`; pass `user/name` through unchanged.
 
@@ -138,11 +148,9 @@ def _resolve_repo(repo_id: str, for_creation: bool = False) -> str:
         typer.secho(f"(not logged in to HF — creating dataset under local/{repo_id})", fg="yellow")
         return f"local/{repo_id}"
     try:
-        from lerobot.utils.constants import HF_LEROBOT_HOME
-
         candidates = sorted(
             p
-            for p in Path(HF_LEROBOT_HOME).glob(f"*/{repo_id}")
+            for p in _hf_lerobot_home().glob(f"*/{repo_id}")
             # Skip junk dirs: a HF namespace is alphanumeric with -_. and no spaces.
             if p.is_dir() and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", p.parent.name)
         )
@@ -219,9 +227,7 @@ def _check_policy_cameras(policy: str, foll: dict, cameras: bool) -> None:
 
 def _dataset_root(repo_id: str) -> Path:
     """Local directory where lerobot stores a dataset: $HF_LEROBOT_HOME/<repo_id>."""
-    from lerobot.utils.constants import HF_LEROBOT_HOME
-
-    return Path(HF_LEROBOT_HOME) / repo_id
+    return _hf_lerobot_home() / repo_id
 
 
 def _maybe_overwrite(repo: str, overwrite: bool) -> None:
@@ -321,6 +327,23 @@ def _patch_lerobot_record_runtime() -> None:
 
         dataset_path = Path(lerobot_dataset.__file__)
         dataset_text = dataset_path.read_text()
+        if "def has_pending_frames(self) -> bool:" not in dataset_text:
+            save_episode_marker = '''
+    def save_episode(self, episode_data: dict | None = None) -> None:
+'''
+            has_pending_method = '''
+    def has_pending_frames(self) -> bool:
+        """Return whether the in-memory episode buffer contains unsaved frames."""
+        return self.episode_buffer is not None and self.episode_buffer.get("size", 0) > 0
+
+'''
+            if save_episode_marker not in dataset_text:
+                typer.secho("(could not patch LeRobotDataset.has_pending_frames; installed code layout changed)", fg="yellow")
+            else:
+                dataset_text = dataset_text.replace(save_episode_marker, has_pending_method + save_episode_marker, 1)
+                dataset_path.write_text(dataset_text)
+                typer.secho("(patched LeRobotDataset.has_pending_frames)", fg="yellow")
+
         wait_patch = '''
         if self.image_writer is not None:
             self._wait_image_writer()
@@ -342,8 +365,27 @@ def _patch_lerobot_record_runtime() -> None:
             if cleanup_needle not in dataset_text:
                 typer.secho("(could not patch lerobot clear_episode_buffer image-writer wait; installed code layout changed)", fg="yellow")
             else:
-                dataset_path.write_text(dataset_text.replace(cleanup_needle, cleanup_replacement, 1))
+                dataset_text = dataset_text.replace(cleanup_needle, cleanup_replacement, 1)
+                dataset_path.write_text(dataset_text)
                 typer.secho("(patched lerobot clear_episode_buffer image-writer wait)", fg="yellow")
+
+        from lerobot.datasets import image_writer
+
+        image_writer_path = Path(image_writer.__file__)
+        image_writer_text = image_writer_path.read_text()
+        mkdir_patch = '''
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        img.save(fpath)
+'''
+        if mkdir_patch not in image_writer_text:
+            save_needle = '''
+        img.save(fpath)
+'''
+            if save_needle not in image_writer_text:
+                typer.secho("(could not patch image writer parent-dir creation; installed code layout changed)", fg="yellow")
+            else:
+                image_writer_path.write_text(image_writer_text.replace(save_needle, mkdir_patch, 1))
+                typer.secho("(patched image writer parent-dir creation)", fg="yellow")
     except Exception as exc:
         typer.secho(f"(could not patch lerobot record runtime: {exc})", fg="yellow")
 

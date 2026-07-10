@@ -73,6 +73,7 @@ upload = "python scripts/so101.py upload"            # usage: pixi run upload --
 train = "python scripts/so101.py train"              # usage: pixi run train --repo-id name [--policy act]
 eval = "python scripts/so101.py eval"                # usage: pixi run eval --policy <ckpt> --task "..." --repo-id eval_name
 policy-test = "python scripts/so101.py policy-test"  # offline inference smoke test (no robot needed)
+merge-datasets = "python scripts/merge_lerobot_v2_v3.py"  # v2.1 + v3.0 -> a new v2.1 dataset
 
 # Low-level fallback if you prefer raw lerobot port detection:
 find-port = "lerobot-find-port"
